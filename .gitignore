@@ -30,3 +30,5 @@ venv/
 #IntelliJ
 .idea
 
+#Snowflake
+.snowflake/*

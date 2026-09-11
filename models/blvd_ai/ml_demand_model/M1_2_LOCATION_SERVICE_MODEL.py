@@ -24,7 +24,7 @@ TARGET_COL = "PROVIDER_HOURS_DEMANDED"
 MODEL_NAME = "LOCATION_SERVICE_DEMAND_XGBOOST"
 
 # Training / test date windows
-START_TRAIN_DATE  = os.environ.get("var_start_train_date", "2023-01-01")
+START_TRAIN_DATE  = os.environ.get("var_start_train_date", "2025-01-01")
 FINISH_TRAIN_DATE = os.environ.get("var_finish_train_date", "2026-03-31")
 START_TEST_DATE   = os.environ.get("var_start_test_date", "2026-04-01")
 FINISH_TEST_DATE  = os.environ.get("var_finish_test_date", "2026-04-30")
@@ -131,8 +131,26 @@ CATEGORICAL_COLS = [
 
 ALL_COLS = NUMERIC_FEATURE_COLS + CATEGORICAL_COLS + [TARGET_COL]
 
+def model(dbt, session):
+    """dbt Python model entry point — submits the ML Job and waits for results."""
+    import time as _time
+    import pandas as pd
+    dbt.config(
+        materialized="ml_model",
+        packages=["snowflake-ml-python", "xgboost", "scikit-learn", "numpy", "pandas"],
+    )
+    job = train()
+    while job.status in ("PENDING", "RUNNING"):
+        _time.sleep(10)
+    if job.status != "DONE":
+        raise RuntimeError(f"ML Job {job.id} failed with status: {job.status}")
+    result = job.result()
+    df = pd.DataFrame([result])
+    return df
+
+
 @remote(compute_pool=COMPUTE_POOL, stage_name=STAGE_NAME, target_instances=1)
-def main():
+def train():
     import time
     import os
     import pickle
@@ -456,6 +474,16 @@ def main():
     sample_out = conformal_instance.predict(X_test.head(3))
     print(f"[{time.time()-start_time:.1f}s]   Sanity check:\n{sample_out.to_string(index=False)}", flush=True)
 
+    # Workaround: when @remote + dbt compile the code into _udf_code.py,
+    # cloudpickle deserializes ConformalXGBModel with __module__='main_module'
+    # on the compute pool, but 'main_module' doesn't exist in sys.modules.
+    # The snowflake-ml Registry's save_model does:
+    #   cloudpickle.register_pickle_by_value(sys.modules[model.__module__])
+    # Fix: ensure 'main_module' exists in sys.modules.
+    import sys, types
+    if 'main_module' not in sys.modules:
+        sys.modules['main_module'] = types.ModuleType('main_module')
+
     # sample_input_data uses raw columns (with categoricals) — defines the
     # external calling contract for MODEL(...)!PREDICT(...) in SQL.
     reg.log_model(
@@ -513,7 +541,7 @@ if __name__ == "__main__":
     session.sql(f"USE SCHEMA {SCHEMA}").collect()
     session.sql(f"CREATE STAGE IF NOT EXISTS {DB}.{SCHEMA}.{MODEL_NAME}").collect()
 
-    job = main()
+    job = train()
     print(f"ML Job submitted: {job.id}")
     print(f"Initial status:   {job.status}")
 

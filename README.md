@@ -27,6 +27,15 @@ dbt run --profiles-dir /Users/lvillavicencio/Documents/Github/dbtdemo_boulevard
 6. test dbt conection:
 dbt debug
 
+7. add dbt_semantic_view package (packages file)
+
+packages:
+  - package: Snowflake-Labs/dbt_semantic_view
+    version: [">=1.0.0"]
+
+8. install package
+
+dbt deps
 
 
 Welcome to your new dbt project!
@@ -43,6 +52,7 @@ Plugins:
 Try running the following commands:
 - dbt run --select example
 - dbt run --select blvd_ai.ml_demand_model
+- dbt run --select M1_2_LOCATION_SERVICE_MODEL
 - dbt test
 
 
