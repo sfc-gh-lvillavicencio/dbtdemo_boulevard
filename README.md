@@ -55,6 +55,10 @@ Try running the following commands:
 - dbt run --select M1_2_LOCATION_SERVICE_MODEL
 - dbt test
 
+show lieneage:
+-dbt docs generate
+-dbt docs serve
+
 
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)

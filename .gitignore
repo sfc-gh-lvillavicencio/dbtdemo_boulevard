@@ -32,3 +32,4 @@ venv/
 
 #Snowflake
 .snowflake/*
+temp_locals/*

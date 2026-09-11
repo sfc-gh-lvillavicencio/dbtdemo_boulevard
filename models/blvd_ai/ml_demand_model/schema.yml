@@ -1,7 +1,27 @@
 version: 2
 
 models:
-- name: M1_LOCATION_SERVICE_TRAINING_S
-  docs:
-    show: true 
-    node_color: "gold" # Use name (such as node_color: purple) or hex code with quotes (such as node_color: "#cd7f32")
+  - name: M1_1_RAW_TRAINING_DATA
+    description: Feature engineering table for ML demand model. One row per (LOCATION_ID x SERVICE_CATEGORY x TARGET_DATE).
+    config:
+      node_color: "gold"
+
+  - name: M1_2_LOCATION_SERVICE_MODEL
+    description: XGBoost demand model training pipeline. Submits an ML Job to train and register the model in the Snowflake Model Registry.
+    config:
+      node_color: "gold"
+
+  - name: M1_3_LOCATION_SERVICE_PREDICTION
+    description: Inference table scoring the training data using the registered XGBoost model with conformal prediction intervals.
+    config:
+      node_color: "gold"
+
+  - name: M1_4_SEMANTIC_VIEW
+    description: Semantic view over ML demand predictions for Cortex Analyst.
+    config:
+      node_color: "gold"
+
+  - name: M1_5_AGENT
+    description: Cortex Agent for querying ML demand predictions by location and service category.
+    config:
+      node_color: "gold"

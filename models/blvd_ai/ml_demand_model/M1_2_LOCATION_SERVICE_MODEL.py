@@ -139,6 +139,9 @@ def model(dbt, session):
         materialized="ml_model",
         packages=["snowflake-ml-python", "xgboost", "scikit-learn", "numpy", "pandas"],
     )
+    # Declare dependency on M1_1 so dbt runs it first.
+    # The actual data read happens inside train() via hardcoded FQN on the compute pool.
+    dbt.ref("M1_1_RAW_TRAINING_DATA")
     job = train()
     while job.status in ("PENDING", "RUNNING"):
         _time.sleep(10)

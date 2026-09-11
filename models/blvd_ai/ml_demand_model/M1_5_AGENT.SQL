@@ -22,5 +22,5 @@
       execution_environment:
         type: "warehouse"
         warehouse: "SNOWFLAKE_PS_STANDARD"
-      semantic_view: "BLVD_AI.ML_DEMAND_MODEL.PREDICTION_TEST_SV"
+      semantic_view: "BLVD_AI.ML_DEMAND_MODEL.M1_4_SEMANTIC_VIEW"
   $$
