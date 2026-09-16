@@ -11,17 +11,18 @@
 #   5. Register ConformalXGBModel in Snowflake Model Registry with metrics
 
 from snowflake.ml.jobs import remote
+from snowflake.ml.jobs import get_job, delete_job
 import os
 
 ENV       = os.environ.get("var_environment", "DEV")
-DB        = "BLVD_AI"
-SCHEMA    = "ML_DEMAND_MODEL"
-FQN       = f"{DB}.{SCHEMA}"
-TABLE     = "LOCATION_SERVICE_TRAINING_RAW"
+DB        = None #"BLVD_AI"
+SCHEMA    = None #"ML_DEMAND_MODEL"
+FQN       = None #f"{DB}.{SCHEMA}"
+TABLE     = None #"LOCATION_SERVICE_TRAINING_RAW"
 ROLE = os.environ.get("var_role", "SNOWFLAKE_PS")
 TARGET_COL = "PROVIDER_HOURS_DEMANDED"
 
-MODEL_NAME = "LOCATION_SERVICE_DEMAND_XGBOOST"
+MODEL_NAME = None #"LOCATION_SERVICE_DEMAND_XGBOOST"
 
 # Training / test date windows
 START_TRAIN_DATE  = os.environ.get("var_start_train_date", "2025-01-01")
@@ -34,7 +35,7 @@ ALPHA = 0.10
 
 
 COMPUTE_POOL = os.environ.get("var_compute_pool", "ML_TRAINING_MEM_X64_G2_8")
-STAGE_NAME   = f"@{DB}.{SCHEMA}.{MODEL_NAME}"
+STAGE_NAME   = "ML_JOB_PAYLOAD_STAGE" #f"@{DB}.{SCHEMA}.{MODEL_NAME}"
 
 
 # ─────────────────────────────── Feature columns ─────────────────────────────
@@ -139,9 +140,15 @@ def model(dbt, session):
         materialized="ml_model",
         packages=["snowflake-ml-python", "xgboost", "scikit-learn", "numpy", "pandas"],
     )
-    # Declare dependency on M1_1 so dbt runs it first.
-    # The actual data read happens inside train() via hardcoded FQN on the compute pool.
-    dbt.ref("M1_1_RAW_TRAINING_DATA")
+    # Derive DB/SCHEMA/TABLE from dbt.ref() to maintain DAG lineage.
+    global DB, SCHEMA, FQN, TABLE, STAGE_NAME, MODEL_NAME
+    TABLE  = dbt.ref("M1_1_RAW_TRAINING_DATA").table_name
+    DB     = dbt.this.database
+    SCHEMA = dbt.this.schema
+    MODEL_NAME = dbt.this.identifier
+    FQN    = f"{DB}.{SCHEMA}"
+    STAGE_NAME = f"@{DB}.{SCHEMA}.{MODEL_NAME}"
+
     job = train()
     while job.status in ("PENDING", "RUNNING"):
         _time.sleep(10)
@@ -149,6 +156,10 @@ def model(dbt, session):
         raise RuntimeError(f"ML Job {job.id} failed with status: {job.status}")
     result = job.result()
     df = pd.DataFrame([result])
+
+    # Clean up the job
+    delete_job(job)
+
     return df
 
 
@@ -164,7 +175,7 @@ def train():
     from sklearn.model_selection import cross_validate, TimeSeriesSplit
     from snowflake.snowpark.context import get_active_session
     from snowflake.ml.registry import Registry
-    from snowflake.ml.model import custom_model
+    from snowflake.ml.model import custom_model, task, type_hints
 
     # ─────────────────────── Custom model (conformal XGBoost) ────────────────
     # Wraps the trained XGBoost model with split conformal prediction (post-hoc)
@@ -234,7 +245,7 @@ def train():
 
     # Set role before any data access or DDL
     session.sql(f"USE ROLE {ROLE}").collect()
-    session.sql(f"CREATE STAGE IF NOT EXISTS {DB}.{SCHEMA}.{MODEL_NAME}").collect()
+    #session.sql(f"CREATE STAGE IF NOT EXISTS {DB}.{SCHEMA}.{MODEL_NAME}").collect()
     session.sql(f"USE SCHEMA {FQN}").collect()
 
     # ── Step 1: Load data & temporal split ────────────────────────────────────
@@ -246,7 +257,7 @@ def train():
     col_list = ", ".join(ALL_COLS + ["TARGET_DATE"])
     raw_df = session.sql(f"""
         SELECT {col_list}
-        FROM {FQN}.{TABLE}
+        FROM {TABLE} -- {FQN}.{TABLE}
         WHERE TARGET_DATE BETWEEN '{START_TRAIN_DATE}' AND '{FINISH_TEST_DATE}'
     """).to_pandas()
     raw_df.columns = [c.strip('"') for c in raw_df.columns]
@@ -440,9 +451,9 @@ def train():
     # Update feature importance with actual version name and persist
     fi_df["MODEL_VERSION"] = model_version
     session.create_dataframe(fi_df).write.mode("append").save_as_table(
-        f"{FQN}.LOCATION_SERVICE_FEATURE_IMPORTANCE"
+        f"{FQN}.{MODEL_NAME}_FEATURE_IMPORTANCE"
     )
-    print(f"[{time.time()-start_time:.1f}s]   Feature importance saved to {FQN}.LOCATION_SERVICE_FEATURE_IMPORTANCE", flush=True)
+    print(f"[{time.time()-start_time:.1f}s]   Feature importance saved to {FQN}.{MODEL_NAME}_FEATURE_IMPORTANCE", flush=True)
 
     # Save artifacts to /tmp for CustomModel registration
     artifacts_dir = "/tmp/conformal_artifacts"
@@ -495,6 +506,7 @@ def train():
         version_name=model_version,
         sample_input_data=X_train.head(100),
         target_platforms=["WAREHOUSE", "SNOWPARK_CONTAINER_SERVICES"],
+        task=task.Task.TABULAR_REGRESSION,
         metrics={
             "rmse": rmse,
             "mae": mae,

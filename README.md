@@ -52,7 +52,13 @@ Plugins:
 Try running the following commands:
 - dbt run --select example
 - dbt run --select blvd_ai.ml_demand_model
+
+- dbt run --select M1_1_RAW_TRAINING_DATA
 - dbt run --select M1_2_LOCATION_SERVICE_MODEL
+- dbt run --select M1_3_LOCATION_SERVICE_PREDICTION
+- dbt run --select M1_4_SEMANTIC_VIEW
+- dbt run --select M1_5_AGENT
+- dbt run --select M1_7_MODEL_MONITOR
 - dbt test
 
 show lieneage:

@@ -25,3 +25,8 @@ models:
     description: Cortex Agent for querying ML demand predictions by location and service category.
     config:
       node_color: "gold"
+
+  - name: M1_7_MODEL_MONITOR
+    description: Model version monitor tracking regression performance (RMSE, MAE) and drift (PSI) for the demand XGBoost model.
+    config:
+      node_color: "gold"
