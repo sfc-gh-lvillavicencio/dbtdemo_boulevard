@@ -34,10 +34,18 @@ models:
     # Config indicated by + and applies to all files under models/example/
     example:
         +database : BLVD_AI
-        +schema   : ML_DEMAND_MODEL
+        +schema   : | 
+          {%- if  target.name == "dev" -%} ML_DEMAND_MODEL_DEV
+          {%- elif target.name == "prod"  -%} ML_DEMAND_MODEL_PROD
+          {%- else -%} ML_DEMAND_MODEL
+          {%- endif -%}
         +materialized: table
     blvd_ai:
       ml_demand_model:
         +database : BLVD_AI
-        +schema   : ML_DEMAND_MODEL
+        +schema   : | 
+          {%- if  target.name == "dev" -%} ML_DEMAND_MODEL_DEV
+          {%- elif target.name == "prod"  -%} ML_DEMAND_MODEL_PROD
+          {%- else -%} ML_DEMAND_MODEL
+          {%- endif -%}
         +materialized: table

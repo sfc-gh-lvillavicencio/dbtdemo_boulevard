@@ -22,5 +22,5 @@
       execution_environment:
         type: "warehouse"
         warehouse: "SNOWFLAKE_PS_STANDARD"
-      semantic_view: "{{ ref('M1_4_SEMANTIC_VIEW') }}"
+      semantic_view: "{{ ref('M1_5_SEMANTIC_VIEW') }}"
   $$

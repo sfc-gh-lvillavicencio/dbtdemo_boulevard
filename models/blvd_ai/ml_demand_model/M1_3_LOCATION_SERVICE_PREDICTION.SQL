@@ -1,7 +1,14 @@
-{{ config(materialized='table') }}
+{{
+    config(
+        materialized='incremental',
+        unique_key=['LOCATION_ID', 'SERVICE_CATEGORY', 'PREDICTION_TIMESTAMP'],
+        incremental_strategy='merge'
+    )
+}}
 
 -- Inference: score using the registered model.
 -- Flattened prediction columns + 90% conformal prediction interval.
+-- Incremental: only scores dates not already in the target table.
 WITH raw_predictions AS (
     SELECT
         LOCATION_ID,
@@ -39,14 +46,18 @@ WITH raw_predictions AS (
             EMAIL_MSGS_L30D,
             SMS_MSGS_L7D,
             SF_ACCOUNT_TENURE,
-            LOCATION_ID,
             SERVICE_CATEGORY,
+            LOCATION_CITY,
             SF_SEGMENT,
             SF_INDUSTRY
         ) AS PREDICTION
     FROM {{ ref('M1_1_RAW_TRAINING_DATA') }}
-    WHERE TARGET_DATE = '2026-04-08'
-      AND PROVIDER_HOURS_DEMANDED IS NOT NULL
+    WHERE PROVIDER_HOURS_DEMANDED IS NOT NULL
+    {% if is_incremental() %}
+        AND TARGET_DATE > (SELECT MAX(PREDICTION_TIMESTAMP)::DATE FROM {{ this }})
+    {% else %}
+        AND TARGET_DATE BETWEEN '2026-04-01' AND  '2026-04-30'
+    {% endif %}
 )
 SELECT
     LOCATION_ID,

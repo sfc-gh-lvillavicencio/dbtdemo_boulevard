@@ -119,10 +119,10 @@ NUMERIC_FEATURE_COLS = [
 CATEGORICAL_COLS = [
     #"LICENSE_TIER",
     # "LOCATION_ZIP3",
-    "LOCATION_ID",
+    #"LOCATION_ID",
     "SERVICE_CATEGORY",
     #"LOCATION_STATE",
-    #"LOCATION_CITY",
+    "LOCATION_CITY",
     #"SF_VERTICAL",
     "SF_SEGMENT",
     #"SF_PLAN_TYPE",
@@ -138,7 +138,7 @@ def model(dbt, session):
     import pandas as pd
     dbt.config(
         materialized="ml_model",
-        packages=["snowflake-ml-python", "xgboost", "scikit-learn", "numpy", "pandas"],
+        packages=["snowflake-ml-python", "snowflake", "xgboost", "scikit-learn", "numpy", "pandas"],
     )
     # Derive DB/SCHEMA/TABLE from dbt.ref() to maintain DAG lineage.
     global DB, SCHEMA, FQN, TABLE, STAGE_NAME, MODEL_NAME
@@ -155,12 +155,35 @@ def model(dbt, session):
     if job.status != "DONE":
         raise RuntimeError(f"ML Job {job.id} failed with status: {job.status}")
     result = job.result()
-    df = pd.DataFrame([result])
 
     # Clean up the job
-    delete_job(job)
+    #delete_job(job)
 
+    # Deploy a scheduled DAG so the model retrains daily
+    deploy_retrain_schedule(session)
+
+    df = pd.DataFrame([result])
     return df
+
+
+def deploy_retrain_schedule(session):
+    """Deploy a Snowflake Task DAG that retrains the model daily at 6 AM UTC.
+    Uses the @remote-decorated train() function as the ML Job Definition.
+    Runs one immediate execution; the cron schedule handles subsequent runs."""
+    from snowflake.core import Root, CreateMode
+    from snowflake.core.task import Cron
+    from snowflake.core.task.dagv1 import DAG, DAGTask, DAGOperation
+
+    dag_name = "M1_2_RETRAIN_DAG"
+    with DAG(dag_name,
+             schedule=Cron("0 6 * * *", "UTC"),
+             warehouse="SNOWFLAKE_PS_STANDARD") as dag:
+        retrain_task = DAGTask("RETRAIN_MODEL", definition=train)
+
+    schema = Root(session).databases[DB].schemas[SCHEMA]
+    op = DAGOperation(schema)
+    op.deploy(dag, mode=CreateMode.or_replace)
+    #op.run(dag)  # immediate one-off run; schedule handles the rest ( trigered in model() above)
 
 
 @remote(compute_pool=COMPUTE_POOL, stage_name=STAGE_NAME, target_instances=1)
@@ -489,14 +512,19 @@ def train():
     print(f"[{time.time()-start_time:.1f}s]   Sanity check:\n{sample_out.to_string(index=False)}", flush=True)
 
     # Workaround: when @remote + dbt compile the code into _udf_code.py,
-    # cloudpickle deserializes ConformalXGBModel with __module__='main_module'
-    # on the compute pool, but 'main_module' doesn't exist in sys.modules.
-    # The snowflake-ml Registry's save_model does:
-    #   cloudpickle.register_pickle_by_value(sys.modules[model.__module__])
-    # Fix: ensure 'main_module' exists in sys.modules.
+    # cloudpickle deserializes ConformalXGBModel with __module__='main_module'.
+    # This causes two problems:
+    #   1. reg.log_model() fails with KeyError('main_module') because
+    #      sys.modules['main_module'] doesn't exist.
+    #   2. Even if we fix (1), cloudpickle bakes 'main_module' into the
+    #      serialized artifact. At warehouse inference time, cloudpickle
+    #      can't find 'main_module' and crashes with internal error 370001.
+    # Fix: patch __module__ to '__main__' BEFORE log_model() so cloudpickle
+    # serializes the class with '__main__' (which exists everywhere).
     import sys, types
     if 'main_module' not in sys.modules:
         sys.modules['main_module'] = types.ModuleType('main_module')
+    ConformalXGBModel.__module__ = '__main__'
 
     # sample_input_data uses raw columns (with categoricals) — defines the
     # external calling contract for MODEL(...)!PREDICT(...) in SQL.

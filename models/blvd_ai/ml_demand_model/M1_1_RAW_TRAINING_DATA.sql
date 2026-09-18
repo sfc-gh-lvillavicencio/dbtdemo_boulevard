@@ -1,5 +1,4 @@
 -- Boulevard Labor Demand Forecast — Feature Engineering (Model 1: All Demand)
--- Co-authored with CoCo
 --
 -- Grain:  one row per (LOCATION_ID × SERVICE_CATEGORY × TARGET_DATE)
 -- Target: PROVIDER_HOURS_DEMANDED (total provider-active hours for that day)
